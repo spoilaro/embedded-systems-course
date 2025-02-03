@@ -1,0 +1,4 @@
+We pretty much copied the whole setup code as well as ADC conversion from the exercise tips. 
+
+In the while loop, first, we declare the buffer variable for storing char data.
+Then, with itoa, we convert the digital value to a char value, store it into the buffer, clear the lcd screen, set the new value to the lcd screen, and the adc conversion completion variable to false.

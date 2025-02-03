@@ -1,14 +1,13 @@
 #define F_CPU 16000000UL // UL stands for Unsigned Long
 #define BAUD 9600
 
+#include <avr/io.h>
 #include "keypad.h"
 #include "lcd.h"
+#include <util/delay.h>
 #include <util/setbaud.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <util/delay.h>
-#include <avr/io.h>
-
 
 void setup() {
     // initialize LCD
@@ -23,19 +22,25 @@ int main(void)
 {
     setup();
 
-    char buf[8 * sizeof(int) + 1];
-
     while (1) {
+        char buf[0];
         // get keypad signal
-        uint8_t key = KEYPAD_GetKey();
-
+        uint8_t ASCII_signal = KEYPAD_GetKey();
+        uint8_t NUM_value = ASCII_signal - '0';
+        
         // convert signal value to string
-        char* s = itoa(key, buf, 2);
+        itoa(NUM_value, buf, 10);
+
+        // tää kohta tarvitaan jotta ei-numeromerkit näkyy oikein 
+        buf[0] = ASCII_signal;
+        buf[1] = '\0';
 
         // clear LCD screen
         lcd_clrscr();
 
         // display output on LCD screen
-        lcd_puts(s);
+        lcd_puts(buf);
+        _delay_ms(1000);
     }
+    return 0;
 }
