@@ -1,0 +1,26 @@
+The setup was taken from the assignment PDF. In the loop, OCRA1 register
+value is set to pre-calculated value together with TCCR1B which controls
+the pre-scale.
+
+In the lines 28-31, OCR1A's value is set to 30534 which when included in the
+algorithm below outputs the frequency of note C4.
+The sound is played for N seconds and the pre-scaler value is set back to 1. 
+This is repeated for different OCR1A and pre-scaler values to get different notes.
+
+The TOP values for the register were calculated as seen below:
+
+262 Hz
+C4 (Prescaler 1)
+TOP = 16 000 000 / 262 * 2 * 1 = 16 000 000 / 524 = 30534
+
+165 Hz
+E3 (Prescaler 1)
+TOP = 16 000 000 / 165 * 2 * 1 = 16 000 000 / 33e = 48485
+
+87 Hz
+F2 (Prescaler 8)
+TOP = 16 000 000 / 87 * 2 * 8 = 16 000 000 / 1392 = 11494
+
+18 Hz
+DO (Prescaler 64)
+TOP = 16 000 000 / 18 * 2 * 64 = 16 000 000 / 2304 = 6944
