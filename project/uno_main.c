@@ -44,6 +44,15 @@ static char USART_Receive(FILE *stream) {
     return UDR0;
 }
 
+void blink_movement() {
+    for (int blinks = 0; blinks < 3; blinks++) {
+        PORTB |= (1 << PB0); // Turn on the LED
+        _delay_ms(500); // Wait for 500ms
+        PORTB &= ~(1 << PB0); // Turn off the LED
+        _delay_ms(500); // Wait for 500ms
+    }
+}
+
 void setup_twi() {
     TWCR |= (1 << TWEA) | (1 << TWEN);
     TWCR &= ~(1 << TWSTA) & ~(1 << TWSTO);
@@ -63,10 +72,14 @@ int main(void) {
 
     setup_twi();
 
-    char twi_receive_data[20]; // Use TWI instead of SPI
-    char test_char_array[16]; // 16-bit array, assumes that the int given is 16-bits
-    uint8_t twi_index = 0; 
+    uint8_t twi_receive_data; // Use TWI instead of SPI
+    char test_char_array[16]; // 16-bit array, assumes that the int given is 16-bits 
     uint8_t twi_status = 0; 
+
+    // PB0, movement LED
+    // 
+    //
+    DDRB |= (1<<PB0); // Set the pin as output
 
     while(1) {
         while(!(TWCR & (1 << TWINT))) // Wait for the interrupt flag to be set
@@ -83,53 +96,53 @@ int main(void) {
 
         if((twi_status == 0x80) || (twi_status == 0x90)) // Data received, ACK returned
         {
-            twi_receive_data[twi_index] = TWDR; // Store the data in the buffer
-            twi_index++;
+            twi_receive_data = TWDR; // Store the data in the buffer
         } else if((twi_status == 0x88) || (twi_status == 0x98)) // Data received, No ACK returned
         {
-            twi_receive_data[twi_index] = TWDR; // Store the data in the buffer
-            twi_index++;
+            twi_receive_data = TWDR; // Store the data in the buffer
         } else if(twi_status == 0xA0) // Check if the stop condition was received
         {
             TWCR |= (1 << TWINT); // Clear the interrupt flag
         }
         
-        if (20 <= twi_index)
-        {
-            switch(twi_receive_data) {
-                case OPEN:
-                    // Open door LED on and LCD displays "Door is open" text for 5 seconds
-                    // "Door is closed" text on LCD for 1 seconds
+        switch(twi_receive_data) {
+            case OPEN:
+                // Open door LED on and LCD displays "Door is open" text for 5 seconds
+                // "Door is closed" text on LCD for 1 seconds
+                
 
-                case UP:
-                    // Movement LED on
-                    // LCD displays current floor until the floor is reached
-                    // Open the door (sent from the master)
+            case UP:
+                // Movement LED on
+                // LCD displays current floor until the floor is reached
+                // Open the door (sent from the master)
+                PORTB |= (1 << PB0); // Turn on the LED
 
-                case DOWN:
-                    // Same here
+            case DOWN:
+                PORTB |= (1 << PB0); // Turn on the LED
 
-                case FAULT: // Triggered when the same floor as the current floor is selected
-                    // Movement LED blinks 3 times
+            case FAULT: // Triggered when the same floor as the current floor is selected
+                // Movement LED blinks 3 times
+                blink_movement(); // Call the blink function
 
-                case EMERGENCY_START: // Triggered on emergency button press
-                    // LCD shows "EMERGENCY" text
-                    // Movement LED blinks 3 times
+            case EMERGENCY_START: // Triggered on emergency button press
+                // LCD shows "EMERGENCY" text
+                // Movement LED blinks 3 times
+                blink_movement(); // Call the blink function
 
-                case EMERGENCY: // Triggered on random keypad button press
-                    // Open door and play the melody infinitely
-                    // When another random button is pressed
 
-                case EMERGENCY_STOP: // Triggered on random keypad button press
-                    // Stop the melody and close the door
+            case EMERGENCY: // Triggered on random keypad button press
+                // Open door and play the melody infinitely
+                // When another random button is pressed
 
-                default: // case IDLE
-                    // Wait for the floor input
-                    // Display "Choose a floor" text on the LCD
+            case EMERGENCY_STOP: // Triggered on random keypad button press
+                // Stop the melody and close the door
 
-            }
+            default: // case IDLE
+                // Wait for the floor input
+                // Display "Choose a floor" text on the LCD
+                // Door open led OFF
+                PORTB &= ~(1 << PB0); // Turn off the LED
 
-            twi_index = 0;
         }
     }
     return 0;
