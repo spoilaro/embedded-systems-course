@@ -3,6 +3,7 @@
 #define BAUD 9600
 #define MYUBRR (FOSC / 16 / BAUD - 1) // see datasheet p. 203 in the example code for C
 #define SLAVE_ADDRESS 0b1010111       // 87 as decimal.
+#define DELAY 100
 
 // Pins of components
 
@@ -24,6 +25,7 @@
 #include <stdlib.h>
 #include "lcd.h"
 #include <stdbool.h>
+#include "keypad.h"
 
 volatile uint8_t state = IDLE;
 
@@ -44,6 +46,17 @@ void send_fault_and_reset() {
     send_state();
 }
 
+void lcd_string_to_screen(char* signal) {
+    lcd_clrscr();
+    lcd_puts(signal);
+}
+
+void lcd_number_to_screen(uint8_t number) {
+    char str[3];
+    itoa(ascii_signal_to_number(number), str, 10);
+    lcd_string_to_screen(str);
+}
+
 // reads button states and returns the pushed button.
 // If several buttons are pressed, the lowest one is returned.
 // arguments: current floor, int8_t
@@ -53,32 +66,30 @@ void floor_button_choice(int8_t *current_floor_button)
 
     // Compose buffer of numbers until "a" (confirm-button) is pressed
     uint8_t signal_buffer[2];
-
     uint8_t count = 0;
-    uint8_t ASCII_signal = KEYPAD_GetKey();
-    
+    uint8_t ASCII_signal;
     
     while (true) // While confirm button not pressed
     {
         // Read signal from keypad
         ASCII_signal = KEYPAD_GetKey();
-        
+        uint8_t NUM_value = ASCII_signal - '0';
         // User didn't input any floor numbers.
         // Sends fault status
-        if(ASCII_signal == "A" && count == 0) {
+        if(ASCII_signal == 'A' && count == 0) {
             send_fault_and_reset();
             continue;
         // User confirms inputted floor numbers.
         // Loop breaks and logic continues forward.
-        } else if (ASCII_signal == "A" && count != 0) {
+        } else if (ASCII_signal == 'A' && count != 0) {
             break;
         // Default case
         // Keypad returns "empty" signal 
-        } else if (ASCII_signal == "z") {
+        } else if (ASCII_signal == 'z') {
             continue;
         // User tries to input more than 2 floor numbers.
         // Sends fault status, reset count, buffer values overwritten later
-        } else if (count >= 2 && ASCII_signal != "A") {
+        } else if (count >= 2 && ASCII_signal != 'A') {
             send_fault_and_reset();
             count = 0;
             continue;
@@ -88,6 +99,7 @@ void floor_button_choice(int8_t *current_floor_button)
         } else if (ascii_signal_to_number(ASCII_signal) >= 0 && ascii_signal_to_number(ASCII_signal) < 11) {
             signal_buffer[count] = ASCII_signal;
             count++;
+            
         }
     }
 
@@ -95,31 +107,12 @@ void floor_button_choice(int8_t *current_floor_button)
     uint8_t n1 = ascii_signal_to_number(signal_buffer[0]);
     uint8_t n2 = ascii_signal_to_number(signal_buffer[1]);
     
-    // Composites two numbers to one string
+    // Composites two numbers to one string + null terminator
     // E.g 2 and 3 becomes 23
-    char c[2];
+    char c[3];
     sprintf(c, "%d%d", n1, n2);
 
     *current_floor_button = atoi(c);
-}
-
-void lcd_setup() {
-    DDRC &= ~(1 << PC3);
-    TCCR0A = 0x02; //See datasheet p. 104
-    TCCR0B = 0x05; //See datasheet p. 107
-    OCR0A = 0xFF; //See datasheet p. 108
-    TIMSK0 |= (1 << 1); //See datasheet p. 109
-    TCNT0 = 0; //See datasheet p. 108
-    sei();
-    ADMUX |= 0b01000000; //See datasheet p. 248. Sets AV_cc as voltage reference.
-    ADMUX |= 0b00000011; //See datasheet p. 249. Set A3 as input channel.
-    ADCSRA |= (1 << 7); // Enable ADC, see datasheet p. 249
-    ADCSRA |= (1 << 5); // Enable ADC auto trigger, see datasheet p. 249
-    ADCSRA |= (1 << 3); // Enable ADC interrupt, see datasheet p. 250
-    ADCSRA |= 0b00000101; // Set prescaler to 32, see datasheet p. 250
-    ADCSRB |= 0b00000011; // Set ADC to trigger with timer/counter0 compare match A, see datasheet p. 251
-    sei();
-    lcd_init(LCD_DISP_ON);
 }
 
 static void USART_init(uint16_t ubrr)
@@ -152,7 +145,7 @@ static char USART_Receive(FILE *stream)
 }
 
 void lcd_write_cur_floor(uint8_t floor_current) {
-    char floor_str[2];
+    char floor_str[3];
     itoa(floor_current, floor_str, 10);
     lcd_clrscr();
     lcd_puts(floor_str);
@@ -189,7 +182,8 @@ FILE uart_input = FDEV_SETUP_STREAM(NULL, USART_Receive, _FDEV_SETUP_READ);
 
 int main(void)
 {
-    lcd_setup();
+    lcd_init(LCD_DISP_ON);
+    KEYPAD_Init();
     USART_init(MYUBRR);
     // Redirect STDIN and STDOUT to UART
     stdout = &uart_output;
@@ -205,7 +199,11 @@ int main(void)
 
     char test_char_array[16];
     uint8_t twi_status = 0;
-
+    
+    uint8_t ASCII_signal = KEYPAD_GetKey();
+    lcd_number_to_screen(ASCII_signal);
+    _delay_ms(100000);
+    
 
     // TODO: add emergency states
     while (1)
@@ -213,12 +211,14 @@ int main(void)
         // TODO: add emergency states / Check when emergency button is pressed
         // TODO: emergency states order EMERGENCY_START ->  EMERGENCY -> EMERGENCY_STOP
         // TODO: blink movement led -> play song indefinitely -> read keypress to stop emergency
+        
         switch (state)
         {
         case IDLE:
             lcd_clrscr();
             lcd_puts("Choose the floor");
             floor_button_choice(&requested_floor);
+            ASCII_signal = KEYPAD_GetKey();
 
             // Check if the requested floor is the same as the current floor
             if (requested_floor == floor_current)
@@ -316,3 +316,11 @@ int main(void)
     }
     return 0;
 }
+
+// void
+// lcd_puts_line(int line, char* content) {
+//     lcd_gotoxy(0, line);
+//     lcd_puts("                "); // empty the buffer
+//     lcd_gotoxy(0, line);
+//     lcd_puts(content); // replace content
+// }
