@@ -17,6 +17,10 @@
 #define EMERGENCY 6
 #define EMERGENCY_STOP 7
 
+// Error codes for button dialog
+#define BUTTON_DIALOG_OK 0 // Code when the button dialog was successful
+#define BUTTON_DIALOG_INVALID_INPUT 1 // Code when the input given was invalid
+
 #include <util/delay.h>
 #include <util/setbaud.h>
 #include <stdio.h>
@@ -29,39 +33,57 @@
 
 volatile uint8_t state = IDLE;
 
-// Function prototypes
-int ascii_signal_to_number(uint8_t signal);
-void send_fault_and_reset();
-
-int ascii_signal_to_number(uint8_t signal)
+/* 
+    Converts ASCII signal to number.
+    arguments: signal, uint8_t
+    returns: number, int
+*/
+uint8_t ascii_signal_to_number(uint8_t signal)
 {
     uint8_t result = signal - '0';
     return result;
 }
 
-void send_fault_and_reset() {
+/* 
+    Sends fault status and resets the state to IDLE.
+    arguments: signal, char*
+*/
+void send_fault_and_reset(char * message) {
+    lcd_string_to_screen(message);
     state = FAULT;
     send_state();
+    _delay_ms(1000);
     state = IDLE;
     send_state();
 }
 
-void lcd_string_to_screen(char* signal) {
+/* 
+    Simple function for printing strings to the LCD screen.
+    arguments: signal, char*
+*/
+void lcd_string_to_screen(char* message) {
     lcd_clrscr();
-    lcd_puts(signal);
+    lcd_puts(message);
 }
 
+/* 
+    Converts number to ASCII signal and prints it to the LCD screen.
+    arguments: number, uint8_t
+*/
 void lcd_number_to_screen(uint8_t number) {
     char str[3];
-    itoa(ascii_signal_to_number(number), str, 10);
+    itoa(number, str, 10);
     lcd_string_to_screen(str);
 }
 
-// reads button states and returns the pushed button.
-// If several buttons are pressed, the lowest one is returned.
-// arguments: current floor, int8_t
-// returns: 
-void floor_button_choice(int8_t *current_floor_button)
+
+/* 
+    Reads button states and returns the pushed button.
+    arguments: current floor, int8_t
+    returns: status code of the button dialog
+    0 - success, 1 - invalid input
+ */
+int floor_button_choice(uint8_t *current_floor_button)
 {
 
     // Compose buffer of numbers until "a" (confirm-button) is pressed
@@ -71,48 +93,58 @@ void floor_button_choice(int8_t *current_floor_button)
     
     while (true) // While confirm button not pressed
     {
-        // Read signal from keypad
+        // Read signal from keypad. Waits for input.
         ASCII_signal = KEYPAD_GetKey();
-        uint8_t NUM_value = ASCII_signal - '0';
-        // User didn't input any floor numbers.
-        // Sends fault status
+        
+        /* 
+            User didn't input any floor numbers and pressed "A" (confirm button)
+            Sends fault status
+        */
         if(ASCII_signal == 'A' && count == 0) {
-            send_fault_and_reset();
-            continue;
-        // User confirms inputted floor numbers.
-        // Loop breaks and logic continues forward.
+            send_fault_and_reset("Maximum floor number is 99");
+            return BUTTON_DIALOG_INVALID_INPUT;
+        
+        /* 
+            User pressed "A" (confirm button) and inputted 1 or 2 floor numbers
+        */
         } else if (ASCII_signal == 'A' && count != 0) {
             break;
-        // Default case
-        // Keypad returns "empty" signal 
-        } else if (ASCII_signal == 'z') {
-            continue;
-        // User tries to input more than 2 floor numbers.
-        // Sends fault status, reset count, buffer values overwritten later
+        
+        /* 
+            User tries to input more than 2 floor numbers.
+            returns invalid input status code
+        */
         } else if (count >= 2 && ASCII_signal != 'A') {
-            send_fault_and_reset();
-            count = 0;
-            continue;
-        // Add to count and add input to buffer
-        // Default case for correct floor input
-        // Check if ASCII signal is between 0 and 9
+            send_fault_and_reset("Invalid button choice");
+            return BUTTON_DIALOG_INVALID_INPUT;
+        
+        /* 
+            Add to count and add input to buffer
+            Default case for correct floor input
+            Check if ASCII signal is between 0 and 9
+        */
         } else if (ascii_signal_to_number(ASCII_signal) >= 0 && ascii_signal_to_number(ASCII_signal) < 11) {
             signal_buffer[count] = ASCII_signal;
             count++;
-            
         }
     }
 
     // Converts individual ASCII signals to numbers
     uint8_t n1 = ascii_signal_to_number(signal_buffer[0]);
     uint8_t n2 = ascii_signal_to_number(signal_buffer[1]);
-    
-    // Composites two numbers to one string + null terminator
-    // E.g 2 and 3 becomes 23
-    char c[3];
-    sprintf(c, "%d%d", n1, n2);
-
-    *current_floor_button = atoi(c);
+    if(count < 2)
+    {
+        *current_floor_button = n1;
+    } else {
+        // Composites two numbers to one string + null terminator
+        // E.g 2 and 3 becomes 23
+        char c[3];
+        sprintf(c, "%d%d", n1, n2);
+        *current_floor_button = atoi(c);
+    }
+    lcd_number_to_screen(*current_floor_button);
+    _delay_ms(1000);
+    return BUTTON_DIALOG_OK;
 }
 
 static void USART_init(uint16_t ubrr)
@@ -176,6 +208,10 @@ void send_state()
     TWCR = (1 << TWINT) | (1 << TWEN) | (1 << TWSTO); // Enable TWI, stop condition
 }
 
+void emergency_protocol() {
+    
+}
+
 // Setup buffers for input and output
 FILE uart_output = FDEV_SETUP_STREAM(USART_Transmit, NULL, _FDEV_SETUP_WRITE);
 FILE uart_input = FDEV_SETUP_STREAM(NULL, USART_Receive, _FDEV_SETUP_READ);
@@ -193,17 +229,12 @@ int main(void)
     TWSR = 0x00;        // TWI status register, prescaler set to 1
     TWCR = (1 << TWEN); // Enable TWI
 
-    static int8_t requested_floor = -1;
-    static int8_t floor_current = 1;
+    static uint8_t requested_floor = 0;
+    static uint8_t floor_current = 1;
     static bool b_doors_opened = false;
 
     char test_char_array[16];
     uint8_t twi_status = 0;
-    
-    uint8_t ASCII_signal = KEYPAD_GetKey();
-    lcd_number_to_screen(ASCII_signal);
-    _delay_ms(100000);
-    
 
     // TODO: add emergency states
     while (1)
@@ -211,27 +242,23 @@ int main(void)
         // TODO: add emergency states / Check when emergency button is pressed
         // TODO: emergency states order EMERGENCY_START ->  EMERGENCY -> EMERGENCY_STOP
         // TODO: blink movement led -> play song indefinitely -> read keypress to stop emergency
+    
         
+
         switch (state)
         {
         case IDLE:
-            lcd_clrscr();
-            lcd_puts("Choose the floor");
-            floor_button_choice(&requested_floor);
-            ASCII_signal = KEYPAD_GetKey();
+            lcd_string_to_screen("Choose the floor");
+
+            int err_code = floor_button_choice(&requested_floor);
+            if (err_code == BUTTON_DIALOG_INVALID_INPUT) {
+                continue;
+            }
 
             // Check if the requested floor is the same as the current floor
             if (requested_floor == floor_current)
             {
-                state = FAULT;
-                send_state();
-                // requested_floor = -1;
-                state = IDLE;
-            }
-            // Case of default state of the requested floor
-            else if (requested_floor == -1)
-            {
-                state = IDLE;
+                send_fault_and_reset("Already on this floor");
             }
             else if (requested_floor < floor_current)
             {
@@ -252,7 +279,7 @@ int main(void)
                 // GOING UP TO THE NEXT FLOOR
                 state = UP;
                 floor_current++;
-                _delay_ms(1000);
+                _delay_ms(100);
             }
             else if (requested_floor == floor_current)
             {
@@ -268,8 +295,8 @@ int main(void)
             {
                 // GOING DOWN TO THE NEXT FLOOR
                 state = DOWN;
+                _delay_ms(100);
 
-                _delay_ms(1000);
                 if (1 == floor_current)
                 {
                     ;
@@ -286,8 +313,7 @@ int main(void)
         case OPEN:  
             if (!b_doors_opened)
             {
-                lcd_clrscr();
-                lcd_puts("Door open");
+                lcd_string_to_screen("Door open");
                 b_doors_opened = true;
                 state = OPEN;
                 send_state();
@@ -296,12 +322,10 @@ int main(void)
             else
             {
                 // DOORS CLOSED
-                lcd_clrscr();
-                lcd_puts("Door closed");
+                lcd_string_to_screen("Door closed");
                 state = IDLE;
                 b_doors_opened = false;
                 send_state();
-                _delay_ms(2000);
             }
             break;
 
@@ -310,17 +334,7 @@ int main(void)
             state = IDLE;
             break;
         }
-
-        send_state();
-        _delay_ms(1000);
+        _delay_ms(100);
     }
     return 0;
 }
-
-// void
-// lcd_puts_line(int line, char* content) {
-//     lcd_gotoxy(0, line);
-//     lcd_puts("                "); // empty the buffer
-//     lcd_gotoxy(0, line);
-//     lcd_puts(content); // replace content
-// }

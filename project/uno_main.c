@@ -76,10 +76,12 @@ int main(void) {
     char test_char_array[16]; // 16-bit array, assumes that the int given is 16-bits 
     uint8_t twi_status = 0; 
 
-    // PB0, movement LED
-    // 
-    //
+    /* 
+        PB0, movement LED
+        PB1, door open LED
+    */
     DDRB |= (1<<PB0); // Set the pin as output
+    DDRB |= (1<<PB1); // Set the pin as output
 
     while(1) {
         while(!(TWCR & (1 << TWINT))) // Wait for the interrupt flag to be set
@@ -109,39 +111,48 @@ int main(void) {
             case OPEN:
                 // Open door LED on and LCD displays "Door is open" text for 5 seconds
                 // "Door is closed" text on LCD for 1 seconds
-                
+                PORTB |= (1 << PB1); // Turn off movement the LED
+                break;
 
             case UP:
                 // Movement LED on
                 // LCD displays current floor until the floor is reached
                 // Open the door (sent from the master)
                 PORTB |= (1 << PB0); // Turn on the LED
+                PORTB &= ~(1 << PB1); // Turn on the movement LED
+                break;
 
             case DOWN:
                 PORTB |= (1 << PB0); // Turn on the LED
+                PORTB &= ~(1 << PB1); // Turn on the movement LED
+                break;
 
             case FAULT: // Triggered when the same floor as the current floor is selected
                 // Movement LED blinks 3 times
                 blink_movement(); // Call the blink function
+                break;
 
             case EMERGENCY_START: // Triggered on emergency button press
                 // LCD shows "EMERGENCY" text
                 // Movement LED blinks 3 times
                 blink_movement(); // Call the blink function
-
-
+                break;
+            
             case EMERGENCY: // Triggered on random keypad button press
                 // Open door and play the melody infinitely
                 // When another random button is pressed
+                break;
 
             case EMERGENCY_STOP: // Triggered on random keypad button press
                 // Stop the melody and close the door
+                break;
 
             default: // case IDLE
                 // Wait for the floor input
                 // Display "Choose a floor" text on the LCD
                 // Door open led OFF
                 PORTB &= ~(1 << PB0); // Turn off the LED
+                break;
 
         }
     }
