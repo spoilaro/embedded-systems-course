@@ -20,6 +20,21 @@
 #include <avr/io.h>
 
 
+void setup_buzzer() {
+    DDRB |= (1 << PB2);
+
+    TCNT1 = 0;
+    // Reset the TCCR registers
+    TCCR1B = 0;
+    TCCR1A = 0;
+    // vvv Not sure if correct vvv
+    //TODO: possibly change buzzer to pin PB1 as that seems to be documented similarly to ex5
+    TCCR1A |= (1 << COM1B1); // Set toggle mode for OC1B (PB2)
+    TCCR1B |= (1 << WGM13);
+    TCCR1B |= (1 << CS11);
+}
+
+
 static void USART_init(uint16_t ubrr) {
     /* Set baud rate */ 
     UBRR0H = (unsigned char) (ubrr >> 8); //datasheet p.206

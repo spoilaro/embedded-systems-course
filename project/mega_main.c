@@ -216,6 +216,8 @@ void emergency_protocol() {
 FILE uart_output = FDEV_SETUP_STREAM(USART_Transmit, NULL, _FDEV_SETUP_WRITE);
 FILE uart_input = FDEV_SETUP_STREAM(NULL, USART_Receive, _FDEV_SETUP_READ);
 
+
+
 int main(void)
 {
     lcd_init(LCD_DISP_ON);
@@ -236,6 +238,12 @@ int main(void)
     char test_char_array[16];
     uint8_t twi_status = 0;
 
+    cli();
+    DDRC &= ~(1 << PC0);    // Set pin 0 of port C as input (emergency button)
+    PCICR |= 0b00000010;    // turn on port c interrupt
+    PCMSK1 |= 0b00000001;    // turn on pin change interrupt for pin 0 of port c
+    sei();
+
     // TODO: add emergency states
     while (1)
     {
@@ -244,9 +252,11 @@ int main(void)
         // TODO: blink movement led -> play song indefinitely -> read keypress to stop emergency
     
         
-
         switch (state)
         {
+        case EMERGENCY_START:
+            emergency_protocol();
+            break;
         case IDLE:
             lcd_string_to_screen("Choose the floor");
 
@@ -338,3 +348,9 @@ int main(void)
     }
     return 0;
 }
+
+ISR(PCINT1_vect) {
+    state = EMERGENCY_START;
+    lcd_string_to_screen("Emergency button pressed");
+    _delay_ms(1000);
+}    // ISR for pin change interrupt on port C
