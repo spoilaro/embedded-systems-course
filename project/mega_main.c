@@ -33,6 +33,10 @@
 
 volatile uint8_t state = IDLE;
 
+ISR(INT2_vect) { 
+    emergency_protocol();
+} 
+
 /* 
     Converts ASCII signal to number.
     arguments: signal, uint8_t
@@ -209,12 +213,45 @@ void send_state()
 }
 
 void emergency_protocol() {
-    
+    state = EMERGENCY_START;
+    send_state();
+    lcd_string_to_screen("EMERGENCY");
+    /*
+        Get input to open door
+        send EMERGENCY state -> plays melody and opens door
+    */
+    KEYPAD_GetKey();
+    state = EMERGENCY;
+    send_state();
+    /*
+        Get input to stop emergency
+        send EMERGENCY_STOP state -> close door
+    */
+    KEYPAD_GetKey(); 
+    state = EMERGENCY_STOP;
+    send_state();
+    state = IDLE;
+    lcd_clrscr();
 }
 
 // Setup buffers for input and output
 FILE uart_output = FDEV_SETUP_STREAM(USART_Transmit, NULL, _FDEV_SETUP_WRITE);
 FILE uart_input = FDEV_SETUP_STREAM(NULL, USART_Receive, _FDEV_SETUP_READ);
+
+void setup_interrupt() {
+    cli();
+    // DDRE &= ~(1 << PE4);    // Set pin 4 of port E as input (emergency button)
+    // PCICR |= (1 << PCIE0);    // turn on port e interrupt
+    // PCMSK0 |= (1 << PCINT4);    // turn on pin change interrupt for pin 0 of port c
+
+     // EX6:
+     DDRD &= ~(1 << PD2) & ~(1 << PD7); // Set the PD2 and PD7 as input
+     EICRA |= (1 << ISC21) | (1 << ISC20); // Set the interrupt to trigger on falling edge
+     EIMSK |= (1 << INT2); // Enable the interrupt
+    
+    sei();
+
+}
 
 
 
@@ -229,7 +266,8 @@ int main(void)
 
     TWBR = 0x03;        // TWI bit rate register, SCL frequency set to 400kHz
     TWSR = 0x00;        // TWI status register, prescaler set to 1
-    TWCR = (1 << TWEN); // Enable TWI
+    TWCR = (2 << TWEN); // Enable TWI
+    setup_interrupt();
 
     static uint8_t requested_floor = 0;
     static uint8_t floor_current = 1;
@@ -237,12 +275,6 @@ int main(void)
 
     char test_char_array[16];
     uint8_t twi_status = 0;
-
-    cli();
-    DDRC &= ~(1 << PC0);    // Set pin 0 of port C as input (emergency button)
-    PCICR |= 0b00000010;    // turn on port c interrupt
-    PCMSK1 |= 0b00000001;    // turn on pin change interrupt for pin 0 of port c
-    sei();
 
     // TODO: add emergency states
     while (1)
@@ -254,9 +286,6 @@ int main(void)
         
         switch (state)
         {
-        case EMERGENCY_START:
-            emergency_protocol();
-            break;
         case IDLE:
             lcd_string_to_screen("Choose the floor");
 
@@ -295,7 +324,6 @@ int main(void)
             {
                 // FLOOR REACHED
                 state = OPEN;
-                send_state();
             }
             break;
 
@@ -325,7 +353,6 @@ int main(void)
             {
                 lcd_string_to_screen("Door open");
                 b_doors_opened = true;
-                state = OPEN;
                 send_state();
                 _delay_ms(5000);
             }
@@ -349,8 +376,3 @@ int main(void)
     return 0;
 }
 
-ISR(PCINT1_vect) {
-    state = EMERGENCY_START;
-    lcd_string_to_screen("Emergency button pressed");
-    _delay_ms(1000);
-}    // ISR for pin change interrupt on port C

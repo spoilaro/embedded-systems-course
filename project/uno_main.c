@@ -13,27 +13,65 @@
 #define EMERGENCY 6
 #define EMERGENCY_STOP 7
 
-
+#include <avr/interrupt.h>
 #include <util/delay.h>
 #include <util/setbaud.h>
 #include <stdio.h>
 #include <avr/io.h>
 
 
+ISR (TIMER1_COMPA_vect) {
+
+}
+
 void setup_buzzer() {
-    DDRB |= (1 << PB2);
+    DDRB |= (1 << PB1);
 
     TCNT1 = 0;
     // Reset the TCCR registers
     TCCR1B = 0;
     TCCR1A = 0;
     // vvv Not sure if correct vvv
-    //TODO: possibly change buzzer to pin PB1 as that seems to be documented similarly to ex5
-    TCCR1A |= (1 << COM1B1); // Set toggle mode for OC1B (PB2)
+    TCCR1A |= (1 << COM1A0); // Set toggle mode for OC1A (PB1)
+    TCCR1A |= (1 << WGM10); // Set phase and frequency correct PWM mode, with OCR1A as the TOP
     TCCR1B |= (1 << WGM13);
-    TCCR1B |= (1 << CS11);
+    TIMSK1 |= (1 << OCIE1A);
+    TCCR1B |= (1 << CS10); // no prescaler
+
+    /* Prescalers
+    TCCR1B |= (1 << CS10) // no prescaler
+    TCCR1B |= (1 << CS11) // 8 prescaler
+    TCCR1B |= (1 << CS10) | (1 << CS11) // 64 prescaler
+    */
+    sei();
 }
 
+void play_melody() {
+
+    /*
+    megalovania top values
+    27239 x2
+    13622
+    18182
+
+    */
+
+    OCR1A = 27239;
+    _delay_ms(100);
+    OCR1A = 0;
+    _delay_ms(8);
+    OCR1A = 27239;
+    _delay_ms(100);
+    OCR1A = 0;
+    _delay_ms(8);
+    OCR1A = 13622;
+    _delay_ms(100);
+    OCR1A = 0;
+    _delay_ms(15);
+    OCR1A = 18182;
+    _delay_ms(100);
+    OCR1A = 0;
+}
 
 static void USART_init(uint16_t ubrr) {
     /* Set baud rate */ 
@@ -62,9 +100,9 @@ static char USART_Receive(FILE *stream) {
 void blink_movement() {
     for (int blinks = 0; blinks < 3; blinks++) {
         PORTB |= (1 << PB0); // Turn on the LED
-        _delay_ms(500); // Wait for 500ms
+        _delay_ms(100); // Wait for 100ms
         PORTB &= ~(1 << PB0); // Turn off the LED
-        _delay_ms(500); // Wait for 500ms
+        _delay_ms(100); // Wait for 100ms
     }
 }
 
@@ -86,6 +124,9 @@ int main(void) {
     stdin = &uart_input;
 
     setup_twi();
+    setup_buzzer();
+
+    play_melody();
 
     uint8_t twi_receive_data; // Use TWI instead of SPI
     char test_char_array[16]; // 16-bit array, assumes that the int given is 16-bits 
@@ -93,10 +134,10 @@ int main(void) {
 
     /* 
         PB0, movement LED
-        PB1, door open LED
+        PB2, door open LED
     */
     DDRB |= (1<<PB0); // Set the pin as output
-    DDRB |= (1<<PB1); // Set the pin as output
+    DDRB |= (1<<PB2); // Set the pin as output
 
     while(1) {
         while(!(TWCR & (1 << TWINT))) // Wait for the interrupt flag to be set
@@ -126,29 +167,25 @@ int main(void) {
             case OPEN:
                 // Open door LED on and LCD displays "Door is open" text for 5 seconds
                 // "Door is closed" text on LCD for 1 seconds
-                PORTB |= (1 << PB1); // Turn off movement the LED
+                PORTB &= ~(1 << PB0); // Turn off movement the LED
+                PORTB |= (1 << PB2); // Turn on door the LED
                 break;
 
             case UP:
-                // Movement LED on
-                // LCD displays current floor until the floor is reached
-                // Open the door (sent from the master)
-                PORTB |= (1 << PB0); // Turn on the LED
-                PORTB &= ~(1 << PB1); // Turn on the movement LED
+                PORTB |= (1 << PB0); // Turn on the movement LED
+                PORTB &= ~(1 << PB2); // Turn off the door open LED
                 break;
 
             case DOWN:
-                PORTB |= (1 << PB0); // Turn on the LED
-                PORTB &= ~(1 << PB1); // Turn on the movement LED
+                PORTB |= (1 << PB0); // Turn on the movement LED
+                PORTB &= ~(1 << PB2); // Turn off the door LED
                 break;
 
             case FAULT: // Triggered when the same floor as the current floor is selected
-                // Movement LED blinks 3 times
                 blink_movement(); // Call the blink function
                 break;
 
             case EMERGENCY_START: // Triggered on emergency button press
-                // LCD shows "EMERGENCY" text
                 // Movement LED blinks 3 times
                 blink_movement(); // Call the blink function
                 break;
@@ -156,17 +193,17 @@ int main(void) {
             case EMERGENCY: // Triggered on random keypad button press
                 // Open door and play the melody infinitely
                 // When another random button is pressed
+                play_melody(); // Call the play melody function
+                PORTB |= (1 << PB2); // Turn on the door LED
                 break;
 
             case EMERGENCY_STOP: // Triggered on random keypad button press
                 // Stop the melody and close the door
+                PORTB &= ~(1 << PB2); // Turn off the door LED
                 break;
 
             default: // case IDLE
-                // Wait for the floor input
-                // Display "Choose a floor" text on the LCD
-                // Door open led OFF
-                PORTB &= ~(1 << PB0); // Turn off the LED
+                PORTB&= ~(1 << PB2); // Turn off the door LED
                 break;
 
         }
