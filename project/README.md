@@ -1,8 +1,5 @@
 # Notes
 
-- [ ] Need to implement emergency state in master
-- [ ] Check emergency input at the beginning of main loop
-- [ ] LED pinout for emergency LEDs
-
-- [ ] Testing?
-- [ ] 
+Some possible bugs:
+- In fault state the movement led blinks 3 times too many
+- When returning from the emergency state, melody plays when doing anything that calls send_state() (?)

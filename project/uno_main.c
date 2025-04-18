@@ -100,9 +100,9 @@ static char USART_Receive(FILE *stream) {
 void blink_movement() {
     for (int blinks = 0; blinks < 3; blinks++) {
         PORTB |= (1 << PB0); // Turn on the LED
-        _delay_ms(100); // Wait for 100ms
+        _delay_ms(10); // Wait for 100ms
         PORTB &= ~(1 << PB0); // Turn off the LED
-        _delay_ms(100); // Wait for 100ms
+        _delay_ms(10); // Wait for 100ms
     }
 }
 
@@ -140,11 +140,6 @@ int main(void) {
     DDRB |= (1<<PB2); // Set the pin as output
 
     while(1) {
-        while(!(TWCR & (1 << TWINT))) // Wait for the interrupt flag to be set
-        {;}
-
-        twi_status = (TWSR & 0xF8); // Mask the status register
-
         TWCR |= (1 << TWINT) | (1 << TWEA) | (1 << TWEN); // Clear the interrupt flag
 
         while(!(TWCR & (1 << TWINT))) // Wait for the interrupt flag to be set
@@ -160,7 +155,8 @@ int main(void) {
             twi_receive_data = TWDR; // Store the data in the buffer
         } else if(twi_status == 0xA0) // Check if the stop condition was received
         {
-            TWCR |= (1 << TWINT); // Clear the interrupt flag
+            TWCR |= (1 << TWINT) | (1 << TWEA) | (1 << TWEN);
+            continue;
         }
         
         switch(twi_receive_data) {

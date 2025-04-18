@@ -37,6 +37,28 @@ ISR(INT2_vect) {
     emergency_protocol();
 } 
 
+void emergency_protocol() {
+    state = EMERGENCY_START;
+    send_state();
+    lcd_string_to_screen("EMERGENCY");
+    /*
+        Get input to open door
+        send EMERGENCY state -> plays melody and opens door
+    */
+    KEYPAD_GetKey();
+    state = EMERGENCY;
+    send_state();
+    /*
+        Wait and stop emergency
+        send EMERGENCY_STOP state -> close door
+    */
+    _delay_ms(300); 
+    state = EMERGENCY_STOP;
+    send_state();
+    state = IDLE;
+    lcd_clrscr();
+}
+
 /* 
     Converts ASCII signal to number.
     arguments: signal, uint8_t
@@ -210,28 +232,6 @@ void send_state()
     }
 
     TWCR = (1 << TWINT) | (1 << TWEN) | (1 << TWSTO); // Enable TWI, stop condition
-}
-
-void emergency_protocol() {
-    state = EMERGENCY_START;
-    send_state();
-    lcd_string_to_screen("EMERGENCY");
-    /*
-        Get input to open door
-        send EMERGENCY state -> plays melody and opens door
-    */
-    KEYPAD_GetKey();
-    state = EMERGENCY;
-    send_state();
-    /*
-        Get input to stop emergency
-        send EMERGENCY_STOP state -> close door
-    */
-    KEYPAD_GetKey(); 
-    state = EMERGENCY_STOP;
-    send_state();
-    state = IDLE;
-    lcd_clrscr();
 }
 
 // Setup buffers for input and output
