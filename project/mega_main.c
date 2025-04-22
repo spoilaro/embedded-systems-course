@@ -3,7 +3,6 @@
 #define BAUD 9600
 #define MYUBRR (FOSC / 16 / BAUD - 1) // see datasheet p. 203 in the example code for C
 #define SLAVE_ADDRESS 0b1010111       // 87 as decimal.
-#define DELAY 100
 
 // Define states for elevator
 #define IDLE 0
@@ -177,35 +176,6 @@ int floor_button_choice(uint8_t *current_floor_button)
     return BUTTON_DIALOG_OK;
 }
 
-static void USART_init(uint16_t ubrr)
-{
-    /* Set baud rate */
-    UBRR0H = (unsigned char)(ubrr >> 8); 
-    UBRR0L = (unsigned char)ubrr;      
-    /* Enable receiver and transmitter */
-    UCSR0B |= (1 << RXEN0) | (1 << TXEN0);  
-    UCSR0C |= (1 << USBS0) | (3 << UCSZ00); 
-}
-
-static void USART_Transmit(unsigned char data, FILE *stream)
-{ 
-    while (!(UCSR0A & (1 << UDRE0)))
-    { // Waits until the transmit buffer is empty
-        ;
-    }
-    UDR0 = data; // When the wait is done, writes the data to transmit register
-}
-
-static char USART_Receive(FILE *stream)
-{
-    while (!(UCSR0A & (1 << RXC0)))
-    { // Waits until the receive buffer is filled
-        ;
-    }
-    // When the wait is done, return UDR0;
-    return UDR0;
-}
-
 void lcd_write_cur_floor(uint8_t floor_current) {
     if (emergency_flag) {
         return;
@@ -256,10 +226,6 @@ void set_and_send_state(uint8_t new_state)
     send_state();
 }
 
-// Setup buffers for input and output
-FILE uart_output = FDEV_SETUP_STREAM(USART_Transmit, NULL, _FDEV_SETUP_WRITE);
-FILE uart_input = FDEV_SETUP_STREAM(NULL, USART_Receive, _FDEV_SETUP_READ);
-
 void setup_interrupt() {
     cli();
     DDRD &= ~(1 << PD2) & ~(1 << PD7); // Set the PD2 and PD7 as input
@@ -269,15 +235,10 @@ void setup_interrupt() {
 
 }
 
-
 int main(void)
 {
     lcd_init(LCD_DISP_ON);
     KEYPAD_Init();
-    USART_init(MYUBRR);
-    // Redirect STDIN and STDOUT to UART
-    stdout = &uart_output;
-    stdin = &uart_input;
 
     TWBR = 0x03;        // TWI bit rate register, SCL frequency set to 400kHz
     TWSR = 0x00;        // TWI status register, prescaler set to 1
