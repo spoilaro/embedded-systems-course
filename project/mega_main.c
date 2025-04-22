@@ -5,8 +5,6 @@
 #define SLAVE_ADDRESS 0b1010111       // 87 as decimal.
 #define DELAY 100
 
-// Pins of components
-
 // Define states for elevator
 #define IDLE 0
 #define OPEN 1
@@ -32,31 +30,34 @@
 #include "keypad.h"
 
 volatile uint8_t state = IDLE;
+bool emergency_flag = false;
 
-ISR(INT2_vect) { 
+ISR(INT2_vect) {
+    // Only start emergency if elevator is moving
+    if (state != UP && state != DOWN) {
+        return;
+    }
     emergency_protocol();
 } 
 
 void emergency_protocol() {
-    state = EMERGENCY_START;
-    send_state();
+    set_and_send_state(EMERGENCY_START);
     lcd_string_to_screen("EMERGENCY");
     /*
         Get input to open door
         send EMERGENCY state -> plays melody and opens door
     */
     KEYPAD_GetKey();
-    state = EMERGENCY;
-    send_state();
+    set_and_send_state(EMERGENCY);
     /*
         Wait and stop emergency
         send EMERGENCY_STOP state -> close door
     */
-    _delay_ms(300); 
-    state = EMERGENCY_STOP;
-    send_state();
-    state = IDLE;
+    _delay_ms(3000);
+    set_and_send_state(EMERGENCY_STOP);
+    set_state(IDLE);
     lcd_clrscr();
+    emergency_flag = true;
 }
 
 /* 
@@ -76,11 +77,9 @@ uint8_t ascii_signal_to_number(uint8_t signal)
 */
 void send_fault_and_reset(char * message) {
     lcd_string_to_screen(message);
-    state = FAULT;
-    send_state();
+    set_and_send_state(FAULT);
     _delay_ms(1000);
-    state = IDLE;
-    send_state();
+    set_and_send_state(IDLE);
 }
 
 /* 
@@ -88,6 +87,9 @@ void send_fault_and_reset(char * message) {
     arguments: signal, char*
 */
 void lcd_string_to_screen(char* message) {
+    if (emergency_flag) {
+        return;
+    }
     lcd_clrscr();
     lcd_puts(message);
 }
@@ -101,7 +103,6 @@ void lcd_number_to_screen(uint8_t number) {
     itoa(number, str, 10);
     lcd_string_to_screen(str);
 }
-
 
 /* 
     Reads button states and returns the pushed button.
@@ -119,6 +120,9 @@ int floor_button_choice(uint8_t *current_floor_button)
     
     while (true) // While confirm button not pressed
     {
+        if (emergency_flag) {
+            return BUTTON_DIALOG_INVALID_INPUT;
+        }
         // Read signal from keypad. Waits for input.
         ASCII_signal = KEYPAD_GetKey();
         
@@ -127,7 +131,7 @@ int floor_button_choice(uint8_t *current_floor_button)
             Sends fault status
         */
         if(ASCII_signal == 'A' && count == 0) {
-            send_fault_and_reset("Maximum floor number is 99");
+            send_fault_and_reset("Max floor is 99");
             return BUTTON_DIALOG_INVALID_INPUT;
         
         /* 
@@ -141,7 +145,7 @@ int floor_button_choice(uint8_t *current_floor_button)
             returns invalid input status code
         */
         } else if (count >= 2 && ASCII_signal != 'A') {
-            send_fault_and_reset("Invalid button choice");
+            send_fault_and_reset("Invalid floor");
             return BUTTON_DIALOG_INVALID_INPUT;
         
         /* 
@@ -176,15 +180,15 @@ int floor_button_choice(uint8_t *current_floor_button)
 static void USART_init(uint16_t ubrr)
 {
     /* Set baud rate */
-    UBRR0H = (unsigned char)(ubrr >> 8); // datasheet p.206
-    UBRR0L = (unsigned char)ubrr;        // datasheet p.206
+    UBRR0H = (unsigned char)(ubrr >> 8); 
+    UBRR0L = (unsigned char)ubrr;      
     /* Enable receiver and transmitter */
-    UCSR0B |= (1 << RXEN0) | (1 << TXEN0);  // datasheet p.206
-    UCSR0C |= (1 << USBS0) | (3 << UCSZ00); // datasheet p.221 and p.222
+    UCSR0B |= (1 << RXEN0) | (1 << TXEN0);  
+    UCSR0C |= (1 << USBS0) | (3 << UCSZ00); 
 }
 
 static void USART_Transmit(unsigned char data, FILE *stream)
-{ // datasheet p.207
+{ 
     while (!(UCSR0A & (1 << UDRE0)))
     { // Waits until the transmit buffer is empty
         ;
@@ -203,14 +207,26 @@ static char USART_Receive(FILE *stream)
 }
 
 void lcd_write_cur_floor(uint8_t floor_current) {
+    if (emergency_flag) {
+        return;
+    }
     char floor_str[3];
     itoa(floor_current, floor_str, 10);
     lcd_clrscr();
     lcd_puts(floor_str);
 }
 
-void send_state()
-{
+void set_state(uint8_t new_state) {
+    if (emergency_flag) {
+        return;
+    }
+    state = new_state;
+}
+
+void send_state() {
+    if (emergency_flag) {
+        return;
+    }
     TWCR = (1 << TWINT) | (1 << TWSTA) | (1 << TWEN); // Enable 2-wire serial interface, start condition
     while (!(TWCR & (1 << TWINT)))                    // Wait until TWINT flag is set
     {
@@ -234,25 +250,24 @@ void send_state()
     TWCR = (1 << TWINT) | (1 << TWEN) | (1 << TWSTO); // Enable TWI, stop condition
 }
 
+void set_and_send_state(uint8_t new_state)
+{
+    set_state(new_state);
+    send_state();
+}
+
 // Setup buffers for input and output
 FILE uart_output = FDEV_SETUP_STREAM(USART_Transmit, NULL, _FDEV_SETUP_WRITE);
 FILE uart_input = FDEV_SETUP_STREAM(NULL, USART_Receive, _FDEV_SETUP_READ);
 
 void setup_interrupt() {
     cli();
-    // DDRE &= ~(1 << PE4);    // Set pin 4 of port E as input (emergency button)
-    // PCICR |= (1 << PCIE0);    // turn on port e interrupt
-    // PCMSK0 |= (1 << PCINT4);    // turn on pin change interrupt for pin 0 of port c
-
-     // EX6:
-     DDRD &= ~(1 << PD2) & ~(1 << PD7); // Set the PD2 and PD7 as input
-     EICRA |= (1 << ISC21) | (1 << ISC20); // Set the interrupt to trigger on falling edge
-     EIMSK |= (1 << INT2); // Enable the interrupt
-    
+    DDRD &= ~(1 << PD2) & ~(1 << PD7); // Set the PD2 and PD7 as input
+    EICRA |= (1 << ISC21) | (1 << ISC20); // Set the interrupt to trigger on falling edge
+    EIMSK |= (1 << INT2); // Enable the interrupt
     sei();
 
 }
-
 
 
 int main(void)
@@ -268,7 +283,7 @@ int main(void)
     TWSR = 0x00;        // TWI status register, prescaler set to 1
     TWCR = (2 << TWEN); // Enable TWI
     setup_interrupt();
-
+    
     static uint8_t requested_floor = 0;
     static uint8_t floor_current = 1;
     static bool b_doors_opened = false;
@@ -276,13 +291,9 @@ int main(void)
     char test_char_array[16];
     uint8_t twi_status = 0;
 
-    // TODO: add emergency states
     while (1)
     {
-        // TODO: add emergency states / Check when emergency button is pressed
-        // TODO: emergency states order EMERGENCY_START ->  EMERGENCY -> EMERGENCY_STOP
-        // TODO: blink movement led -> play song indefinitely -> read keypress to stop emergency
-    
+        emergency_flag = false;
         
         switch (state)
         {
@@ -297,17 +308,15 @@ int main(void)
             // Check if the requested floor is the same as the current floor
             if (requested_floor == floor_current)
             {
-                send_fault_and_reset("Already on this floor");
+                send_fault_and_reset("Already on\nthis floor");
             }
             else if (requested_floor < floor_current)
             {
-                state = DOWN;
-                send_state();
+                set_and_send_state(DOWN);
             }
             else if (requested_floor > floor_current)
             {
-                state = UP;
-                send_state();
+                set_and_send_state(UP);
             }
             break;
 
@@ -316,14 +325,16 @@ int main(void)
             if (requested_floor > floor_current)
             {
                 // GOING UP TO THE NEXT FLOOR
-                state = UP;
-                floor_current++;
+                set_state(UP);
+                if (!emergency_flag) {
+                    floor_current++;
+                }
                 _delay_ms(100);
             }
             else if (requested_floor == floor_current)
             {
                 // FLOOR REACHED
-                state = OPEN;
+                set_state(OPEN);
             }
             break;
 
@@ -332,19 +343,16 @@ int main(void)
             if (requested_floor < floor_current)
             {
                 // GOING DOWN TO THE NEXT FLOOR
-                state = DOWN;
-                _delay_ms(100);
-
-                if (1 == floor_current)
-                {
-                    ;
+                set_state(DOWN);
+                if (!emergency_flag) {
+                    floor_current--;
                 }
-                floor_current--;
+                _delay_ms(100);
             }
             else if (requested_floor == floor_current)
             {
                 // FLOOR REACHED
-                state = OPEN;
+                set_state(OPEN);
             }
             break;
 
@@ -353,22 +361,22 @@ int main(void)
             {
                 lcd_string_to_screen("Door open");
                 b_doors_opened = true;
-                send_state();
+                set_and_send_state(OPEN);
                 _delay_ms(5000);
             }
             else
             {
                 // DOORS CLOSED
                 lcd_string_to_screen("Door closed");
-                state = IDLE;
+                _delay_ms(500);
+                set_and_send_state(IDLE);
                 b_doors_opened = false;
-                send_state();
             }
             break;
 
         default:
             // This state should not be reached.
-            state = IDLE;
+            set_state(IDLE);
             break;
         }
         _delay_ms(100);

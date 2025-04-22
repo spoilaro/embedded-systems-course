@@ -31,31 +31,16 @@ void setup_buzzer() {
     // Reset the TCCR registers
     TCCR1B = 0;
     TCCR1A = 0;
-    // vvv Not sure if correct vvv
+
     TCCR1A |= (1 << COM1A0); // Set toggle mode for OC1A (PB1)
     TCCR1A |= (1 << WGM10); // Set phase and frequency correct PWM mode, with OCR1A as the TOP
     TCCR1B |= (1 << WGM13);
     TIMSK1 |= (1 << OCIE1A);
     TCCR1B |= (1 << CS10); // no prescaler
-
-    /* Prescalers
-    TCCR1B |= (1 << CS10) // no prescaler
-    TCCR1B |= (1 << CS11) // 8 prescaler
-    TCCR1B |= (1 << CS10) | (1 << CS11) // 64 prescaler
-    */
-    sei();
 }
 
 void play_melody() {
-
-    /*
-    megalovania top values
-    27239 x2
-    13622
-    18182
-
-    */
-
+    sei(); // enable interrupts
     OCR1A = 27239;
     _delay_ms(100);
     OCR1A = 0;
@@ -71,6 +56,7 @@ void play_melody() {
     OCR1A = 18182;
     _delay_ms(100);
     OCR1A = 0;
+    cli(); // disable interrupts
 }
 
 static void USART_init(uint16_t ubrr) {
@@ -100,9 +86,9 @@ static char USART_Receive(FILE *stream) {
 void blink_movement() {
     for (int blinks = 0; blinks < 3; blinks++) {
         PORTB |= (1 << PB0); // Turn on the LED
-        _delay_ms(10); // Wait for 100ms
+        _delay_ms(100);
         PORTB &= ~(1 << PB0); // Turn off the LED
-        _delay_ms(10); // Wait for 100ms
+        _delay_ms(100);
     }
 }
 
@@ -125,8 +111,6 @@ int main(void) {
 
     setup_twi();
     setup_buzzer();
-
-    play_melody();
 
     uint8_t twi_receive_data; // Use TWI instead of SPI
     char test_char_array[16]; // 16-bit array, assumes that the int given is 16-bits 
@@ -193,16 +177,16 @@ int main(void) {
                 PORTB |= (1 << PB2); // Turn on the door LED
                 break;
 
-            case EMERGENCY_STOP: // Triggered on random keypad button press
-                // Stop the melody and close the door
+            case EMERGENCY_STOP: // Triggered automatically during EMERGENCY state
+                // Close the door
                 PORTB &= ~(1 << PB2); // Turn off the door LED
                 break;
 
             default: // case IDLE
-                PORTB&= ~(1 << PB2); // Turn off the door LED
+                PORTB &= ~(1 << PB2); // Turn off the door LED
                 break;
-
         }
+        twi_receive_data = 0;
     }
     return 0;
 }
