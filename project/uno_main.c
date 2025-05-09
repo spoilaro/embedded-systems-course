@@ -24,6 +24,9 @@ ISR (TIMER1_COMPA_vect) {
 
 }
 
+/*
+    Sets up buzzer register values.
+*/
 void setup_buzzer() {
     DDRB |= (1 << PB1);
 
@@ -39,6 +42,9 @@ void setup_buzzer() {
     TCCR1B |= (1 << CS10); // no prescaler
 }
 
+/*
+    Plays a melody with the buzzer.
+*/
 void play_melody() {
     sei(); // enable interrupts
     OCR1A = 27239;
@@ -59,6 +65,9 @@ void play_melody() {
     cli(); // disable interrupts
 }
 
+/*
+    Blinks the movement LED three times.
+*/
 void blink_movement() {
     for (int blinks = 0; blinks < 3; blinks++) {
         PORTB |= (1 << PB0); // Turn on the LED
@@ -68,6 +77,9 @@ void blink_movement() {
     }
 }
 
+/*
+    Sets up TWI (Two Wire Interface) communication.
+*/
 void setup_twi() {
     TWCR |= (1 << TWEA) | (1 << TWEN);
     TWCR &= ~(1 << TWSTA) & ~(1 << TWSTO);

@@ -39,6 +39,9 @@ ISR(INT2_vect) {
     emergency_protocol();
 } 
 
+/*
+    Handles the emergency sequence and sets the emergency flag to true.
+*/
 void emergency_protocol() {
     set_and_send_state(EMERGENCY_START);
     lcd_string_to_screen("EMERGENCY");
@@ -62,7 +65,7 @@ void emergency_protocol() {
 /* 
     Converts ASCII signal to number.
     arguments: signal, uint8_t
-    returns: number, int
+    returns: number, uint8_t
 */
 uint8_t ascii_signal_to_number(uint8_t signal)
 {
@@ -105,8 +108,8 @@ void lcd_number_to_screen(uint8_t number) {
 
 /* 
     Reads button states and returns the pushed button.
-    arguments: current floor, int8_t
-    returns: status code of the button dialog
+    arguments: current floor, uint8_t
+    returns: status code of the button dialog, int
     0 - success, 1 - invalid input
  */
 int floor_button_choice(uint8_t *current_floor_button)
@@ -176,6 +179,10 @@ int floor_button_choice(uint8_t *current_floor_button)
     return BUTTON_DIALOG_OK;
 }
 
+/*
+    Prints the current floor number to the LCD screen. Returns if emergency flag is true.
+    arguments: floor number, uint8_t
+*/
 void lcd_write_cur_floor(uint8_t floor_current) {
     if (emergency_flag) {
         return;
@@ -186,6 +193,10 @@ void lcd_write_cur_floor(uint8_t floor_current) {
     lcd_puts(floor_str);
 }
 
+/*
+    Transitions to a new state. Returns if emergency flag is true.
+    arguments: new state, uint8_t
+*/
 void set_state(uint8_t new_state) {
     if (emergency_flag) {
         return;
@@ -193,6 +204,9 @@ void set_state(uint8_t new_state) {
     state = new_state;
 }
 
+/*
+    Sends current state data to slave. Returns if emergency flag is true.
+*/
 void send_state() {
     if (emergency_flag) {
         return;
@@ -220,12 +234,19 @@ void send_state() {
     TWCR = (1 << TWINT) | (1 << TWEN) | (1 << TWSTO); // Enable TWI, stop condition
 }
 
+/*
+    Transitions to a new state and sends the state data to the slave.
+    arguments: new state, uint8_t
+*/
 void set_and_send_state(uint8_t new_state)
 {
     set_state(new_state);
     send_state();
 }
 
+/*
+    Sets up and enables interrupts.
+*/
 void setup_interrupt() {
     cli();
     DDRD &= ~(1 << PD2) & ~(1 << PD7); // Set the PD2 and PD7 as input
